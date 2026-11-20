@@ -31,7 +31,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔗 ربط حساب", callback_data="link"), InlineKeyboardButton("🗄 حساباتي", callback_data="my_accounts")],
         [InlineKeyboardButton("💎 ابدأ الحل", callback_data="solve"), InlineKeyboardButton("📊 إحصائياتي", callback_data="stats")],
         [InlineKeyboardButton("🔑 الاشتراك", callback_data="sub"), InlineKeyboardButton("🎁 الدعوات", callback_data="invites")],
-        [InlineKeyboardButton("👩‍🦰 المساعدة", callback_data="help")]
+        [InlineKeyboardButton("👨🏻‍💻 المساعدة", callback_data="help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -79,7 +79,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"❌ {result['message']}")
             
     elif data == "help":
-        await query.edit_message_text("👩‍🦰 **للمساعدة**\n\nتواصل مع المطور: @YourUsername", parse_mode="Markdown")
+        await query.edit_message_text("👨🏻‍💻 **للمساعدة**\n\nتواصل مع المطور: @Medo_Official_11", parse_mode="Markdown")
     else:
         await query.edit_message_text("هذه الميزة قيد التطوير.")
 
