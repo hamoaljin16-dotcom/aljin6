@@ -1,17 +1,16 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.error import BadRequest
+from telegram.error import BadRequest, Conflict
 import db
 from solver import login_and_solve, cipher
 
-# ✅ التوكن الجديد بتاعك
+# التوكن الأخير
 TOKEN = "8879873627:AAFZuAICIl11LRffbQ0NP5vVUV6MUeTRFRY"
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 db.init_db()
 
-# --- الأزرار الثابتة اللي بتظهر تحت كل رسالة ---
 def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("حساباتي 📚", callback_data="my_accounts"), InlineKeyboardButton("إضافة حساب +", callback_data="link")],
@@ -21,7 +20,6 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- رسالة البدء (الواجهة الرئيسية) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id, update.effective_user.username)
     accounts_count = db.get_accounts_count(user[0])
@@ -49,7 +47,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.callback_query.edit_message_text(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-# --- معالج الأزرار ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -59,7 +56,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(user_id, query.from_user.username)
     accounts_count = db.get_accounts_count(user_id)
 
-    # 1. زرار معلومات الحساب
     if data == "info":
         text = (
             "**معلومات الحساب**\n"
@@ -73,13 +69,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "━━━━━━━━━━━━━━━━━━\n"
             "اختر حساباً تعليمياً لعرض تفاصيله، أو أضف حساباً جديداً."
         )
-        keyboard = [
-            [InlineKeyboardButton("إضافة حساب +", callback_data="link")],
-            [InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]
-        ]
+        keyboard = [[InlineKeyboardButton("إضافة حساب +", callback_data="link")],[InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # 2. زرار حساباتي
     elif data == "my_accounts":
         accounts = db.get_accounts(user_id)
         if not accounts:
@@ -90,53 +82,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "🗄 **حساباتك المرتبطة:**\n\n"
             for i, acc in enumerate(accounts, 1):
                 text += f"{i}. `{acc[2]}`\n"
-            keyboard = [
-                [InlineKeyboardButton("بدء الحل ⚡", callback_data="solve")],
-                [InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]
-            ]
+            keyboard = [[InlineKeyboardButton("بدء الحل ⚡", callback_data="solve")],[InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # 3. زرار تفعيل اشتراك VIP
     elif data == "sub":
-        await query.edit_message_text(
-            "ابعت كود الاشتراك: 🏷️", 
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء ❌", callback_data="main_menu")]])
-        )
+        await query.edit_message_text("ابعت كود الاشتراك: 🏷️", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء ❌", callback_data="main_menu")]]))
         context.user_data['awaiting_vip'] = True
 
-    # 4. زرار إنجازاتي
     elif data == "stats":
-        text = (
-            "إحصائياتك 📊\n"
-            f"الحسابات: {accounts_count}\n"
-            f"عمليات الحل: {1 - user[3] if user[3] <= 1 else 0}" 
-        )
+        text = f"إحصائياتك 📊\nالحسابات: {accounts_count}\nعمليات الحل: {1 - user[3] if user[3] <= 1 else 0}"
         await query.edit_message_text(text, reply_markup=get_main_keyboard())
 
-    # 5. زرار المساعدة
     elif data == "help":
-        text = (
-            "مركز المساعدة ✨\n"
-            "اربط حسابك أولاً، ثم افتح حساباتي واختر «ابدأ الحل» وحدد المادة لهذه العملية."
-        )
+        text = "مركز المساعدة ✨\nاربط حسابك أولاً، ثم افتح حساباتي واختر «ابدأ الحل» وحدد المادة."
         await query.edit_message_text(text, reply_markup=get_main_keyboard())
 
-    # 6. زرار دعوة صديق
     elif data == "invites":
         bot_username = context.bot.username
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
         text = f"رابط الدعوة الخاص بك:\n`{ref_link}`"
         await query.edit_message_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-    # 7. زرار إضافة حساب (ربط حساب)
     elif data == "link":
-        await query.edit_message_text(
-            "🔗 **ربط حساب جديد**\n\nأرسل بياناتك بالصيغة التالية:\n`Login_ID Password`\n\n(مثال: `student123 pass123`)", 
-            parse_mode="Markdown"
-        )
+        await query.edit_message_text("🔗 **ربط حساب جديد**\n\nأرسل بياناتك:\n`Login_ID Password`", parse_mode="Markdown")
         context.user_data['awaiting_link'] = True
 
-    # 8. زرار بدء الحل
     elif data == "solve":
         accounts = db.get_accounts(user_id)
         if not accounts:
@@ -146,8 +116,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ لقد استنفدت عدد عمليات الحل. قم بالترقية.", reply_markup=get_main_keyboard())
             return
             
-        await query.edit_message_text("⏳ جاري الاتصال بالمنصة وبدء الحل بالذكاء الاصطناعي...")
-        
+        await query.edit_message_text("⏳ جاري الاتصال بالمنصة وبدء الحل...")
         result = await login_and_solve(accounts[0][2], accounts[0][3])
         
         if result['success']:
@@ -156,19 +125,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(f"❌ {result['message']}", reply_markup=get_main_keyboard())
 
-    # 9. زرار الرئيسية
     elif data == "main_menu":
         context.user_data['awaiting_link'] = False
         context.user_data['awaiting_vip'] = False
         await start(update, context)
 
-# --- معالج الرسائل النصية (لاستقبال بيانات الحساب) ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('awaiting_link'):
         text = update.message.text.strip()
         parts = text.split()
         if len(parts) != 2:
-            await update.message.reply_text("❌ صيغة خاطئة. أرسل: `Login_ID Password`\nمثال: `student123 123456`")
+            await update.message.reply_text("❌ صيغة خاطئة. أرسل: `Login_ID Password`")
             return
         
         username, password = parts
@@ -182,13 +149,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['awaiting_link'] = False
 
     elif context.user_data.get('awaiting_vip'):
-        await update.message.reply_text("✅ تم استلام الكود، جاري التحقق منه... (هذه الميزة تحت التطوير).")
+        await update.message.reply_text("✅ تم استلام الكود، جاري التحقق منه...")
         context.user_data['awaiting_vip'] = False
 
-# --- معالج الأخطاء (عشان البوت ميقفش لما تدوس على زرار مرتين) ---
+# معالج الأخطاء لتجاهل Conflict و BadRequest
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(context.error, Conflict):
+        return 
     if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error):
-        return  # تجاهل الخطأ ده
+        return
     print(f"Update {update} caused error {context.error}")
 
 def main():
@@ -196,8 +165,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    # ✅ تسجيل معالج الأخطاء
     app.add_error_handler(error_handler)
     
     print("البوت شغال...")
