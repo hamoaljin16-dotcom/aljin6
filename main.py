@@ -1,16 +1,17 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.error import BadRequest
 import db
 from solver import login_and_solve, cipher
 
-# التوكن بتاعك
-TOKEN = "8879873627:AAGbzO3_X-Dppnz2KRrd1MhalCIOSIPNVbo"
+# ✅ التوكن الجديد بتاعك
+TOKEN = "8879873627:AAFZuAICIl11LRffbQ0NP5vVUV6MUeTRFRY"
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 db.init_db()
 
-# --- الأزرار الثابتة اللي بتظهر تحت كل رسالة (نفس الصورة بالظبط) ---
+# --- الأزرار الثابتة اللي بتظهر تحت كل رسالة ---
 def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("حساباتي 📚", callback_data="my_accounts"), InlineKeyboardButton("إضافة حساب +", callback_data="link")],
@@ -147,7 +148,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await query.edit_message_text("⏳ جاري الاتصال بالمنصة وبدء الحل بالذكاء الاصطناعي...")
         
-        # هنا بيتم استدعاء محرك الحل اللي فيه OpenRouter
         result = await login_and_solve(accounts[0][2], accounts[0][3])
         
         if result['success']:
@@ -185,11 +185,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تم استلام الكود، جاري التحقق منه... (هذه الميزة تحت التطوير).")
         context.user_data['awaiting_vip'] = False
 
+# --- معالج الأخطاء (عشان البوت ميقفش لما تدوس على زرار مرتين) ---
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error):
+        return  # تجاهل الخطأ ده
+    print(f"Update {update} caused error {context.error}")
+
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    # ✅ تسجيل معالج الأخطاء
+    app.add_error_handler(error_handler)
     
     print("البوت شغال...")
     app.run_polling()
