@@ -18,15 +18,15 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
         return {"success": False, "message": "خطأ في فك تشفير كلمة المرور."}
 
     async with async_playwright() as p:
-        # 🚨 هنا الإضافة: إجبار المتصفح على استخدام DNS خارجي لحل مشكلة ERR_NAME_NOT_RESOLVED
+        # 🚨 الإضافة الحاسمة: إجبار المتصفح على استخدام IP ثابت للموقع
         browser = await p.chromium.launch(
             headless=True, 
             args=[
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--dns-server=8.8.8.8',
-                '--dns-server=1.1.1.1'
+                # السطر ده هو اللي بيحل مشكلة DNS
+                '--host-resolver-rules=MAP e-portal.qureo.education 108.138.106.107'
             ]
         )
         context = await browser.new_context()
