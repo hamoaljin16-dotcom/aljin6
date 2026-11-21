@@ -43,11 +43,20 @@ async def login_and_solve(username: str, encrypted_password: str):
             await page.fill('input[type="password"]', password)
             await page.locator('button:has-text("Login")').click()
             
-            # انتظار التحميل
+            # استنى الصفحة تحمل
             await page.wait_for_timeout(6000)
             
-            if "login" in page.url:
-                return {"success": False, "message": "فشل الدخول: تأكد من الـ Login ID والباسورد."}
+            # ==========================================
+            # 🚨 فحص إذا كان اليوزر أو الباسورد غلط
+            # ==========================================
+            # بنقرا كل النص اللي في الصفحة عشان نشوف فيه رسالة خطأ ولا لأ
+            page_text = await page.locator("body").inner_text()
+            error_keywords = ["Invalid", "failed", "Incorrect", "خطأ", "غير صحيح", "فشل"]
+            
+            is_error = any(word.lower() in page_text.lower() for word in error_keywords)
+            
+            if "login" in page.url or is_error:
+                return {"success": False, "message": "فشل الدخول: تأكد من صحة الـ Login ID والباسورد."}
 
             # ==========================================
             # 🤖 الذكاء الاصطناعي (OpenRouter)
@@ -109,8 +118,8 @@ async def login_and_solve(username: str, encrypted_password: str):
             return {"success": True, "message": "تم الدخول، لكن الذكاء الاصطناعي لم يجد إجراءً واضحاً."}
             
         except PlaywrightTimeoutError:
-            return {"success": False, "message": "المنصة تأخرت في الاستجابة."}
+            return {"success": False, "message": "المنصة تأخرت في الاستجابة، أو عناصر الدخول مش ظاهرة."}
         except Exception as e:
-            return {"success": False, "message": f"حدث خطأ: {str(e)}"}
+            return {"success": False, "message": f"حدث خطأ في المتصفح: {str(e)}"}
         finally:
             await browser.close()
