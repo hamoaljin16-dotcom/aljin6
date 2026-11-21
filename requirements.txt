@@ -2,3 +2,4 @@ python-telegram-bot>=20.7
 playwright
 cryptography
 openai
+playwright==1.65.2
