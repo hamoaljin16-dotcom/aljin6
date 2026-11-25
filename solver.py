@@ -1,13 +1,13 @@
 import base64
 import json
+import os
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from cryptography.fernet import Fernet
 from openai import OpenAI
 
-# مفتاح التشفير بتاعك
+# استخدام المفاتيح من المتغيرات (أو حطها هنا لو شلت الـ Env)
 cipher = Fernet("hD8bN6O2m2q7X4p8Z9w0Y1v3T5r7U9i1O3p5A7s9D0f=".encode())
 
-# إعداد عميل OpenRouter
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key="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"
@@ -20,16 +20,16 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
         return {"success": False, "message": "خطأ في فك تشفير كلمة المرور."}
 
     async with async_playwright() as p:
-        # إعدادات المتصفح لتجاوز مشاكل الشبكة
+        # إعدادات أخف للمتصفح عشان يشتغل على استضافة 1 جيجا رام
         browser = await p.chromium.launch(
             headless=True, 
             args=[
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-web-security',
-                '--no-proxy-server'
+                '--disable-gpu',                 # تقليل استهلاك الموارد
+                '--single-process',              # تشغيل المتصفح في عملية واحدة (أسرع)
+                '--disable-blink-features=AutomationControlled'
             ]
         )
         
@@ -40,10 +40,14 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
         page = await context.new_page()
         
         try:
-            # 1. فتح رابط المنصة (استخدمنا me-portal زي ما ظهر في السجل عندك)
-            await page.goto("https://me-portal.qureo.education", timeout=90000, wait_until="domcontentloaded")
+            # 1. فتح رابط المنصة
+            # غيرنا wait_until لـ commit عشان ميتعلقش في تحميل الصور
+            await page.goto("https://me-portal.qureo.education", timeout=60000, wait_until="commit")
             
-            # 2. اختيار بوابة التعلم لو ظهرت
+            # 2. استنى شوية عشان الصفحة تترجم وتظهر
+            await page.wait_for_timeout(5000)
+            
+            # 3. اختيار بوابة التعلم لو ظهرت
             try:
                 learning_btn = page.locator("text=Go to Learning Login")
                 if await learning_btn.is_visible(timeout=5000):
@@ -52,13 +56,13 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
             except:
                 pass
             
-            # 3. إدخال بيانات الدخول
+            # 4. إدخال بيانات الدخول
             await page.wait_for_selector('input[type="text"]', timeout=20000)
             await page.fill('input[type="text"]', username)
             await page.fill('input[type="password"]', password)
             await page.locator('button:has-text("Login")').click()
             
-            # 4. انتظار التحميل والتحقق من النجاح
+            # 5. انتظار التحميل والتحقق من النجاح
             await page.wait_for_timeout(8000)
             
             page_text = await page.locator("body").inner_text()
@@ -68,25 +72,26 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
             if "login" in page.url or is_error:
                 return {"success": False, "message": "فشل الدخول: تأكد من صحة الـ Login ID والباسورد."}
 
-            # 5. إرسال رسالة النجاح للتلغرام فوراً
+            # إرسال رسالة النجاح
             if query:
                 try:
                     await query.edit_message_text("✅ تم تسجيل الدخول للمنصة بنجاح! جاري تحليل التحدي بالذكاء الاصطناعي...")
                 except:
                     pass
 
-            # 6. الذكاء الاصطناعي (تصوير الشاشة وتحليلها)
+            # 6. الذكاء الاصطناعي (تصوير الشاشة)
             screenshot_bytes = await page.screenshot(type="png")
             base64_image = base64.b64encode(screenshot_bytes).decode('utf-8')
             
             prompt = """أنت مساعد أتمتة محترف. حلل صورة الشاشة هذه لمنصة Qureo التعليمية.
             المطلوب منك تحديد الخطوة التالية التي يجب على البوت القيام بها.
-            أعد الرد بصيغة JSON فقط، بدون أي نصوص إضافية:
+            
+            أعد الرد بصيغة JSON فقط:
             {
                 "action": "click" أو "type" أو "solve" أو "none",
-                "selector": "محدد CSS للعنصر المراد النقر عليه",
-                "text": "النص المراد كتابته",
-                "solution": "الحل الكامل"
+                "selector": "محدد CSS",
+                "text": "النص",
+                "solution": "الحل"
             }"""
             
             response = client.chat.completions.create(
@@ -121,9 +126,8 @@ async def login_and_solve(username: str, encrypted_password: str, query=None):
             return {"success": True, "message": "تم الدخول، لكن الذكاء الاصطناعي لم يجد إجراءً واضحاً لتنفيذه."}
             
         except PlaywrightTimeoutError:
-            return {"success": False, "message": "المنصة تأخرت في الاستجابة، أو الرابط غير صحيح."}
+            return {"success": False, "message": "السيرفر بياخد وقت طويل عشان يوصل للموقع. المنصة بطيئة أو بتحظر الاستضافة. جرب تاني."}
         except Exception as e:
             return {"success": False, "message": f"حدث خطأ: {str(e)}"}
         finally:
-            # إغلاق المتصفح في كل الأحوال عشان منستهلكش موارد السيرفر
             await browser.close()
