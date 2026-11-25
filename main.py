@@ -1,16 +1,29 @@
 import logging
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import BadRequest, Conflict
 import db
 from solver import login_and_solve, cipher
 
-# التوكن الأخير
+# 🚨 التوكن بتاعك ثابت هنا زي ما طلبت
 TOKEN = "8879873627:AAFZuAICIl11LRffbQ0NP5vVUV6MUeTRFRY"
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 db.init_db()
 
+# --- دالة لفتح بورت وهمي عشان منصة Cloady متقفلش البوت ---
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), BaseHTTPRequestHandler)
+    server.serve_forever()
+
+# تشغيل السيرفر الوهمي في الخلفية
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# --- الأزرار الثابتة ---
 def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("حساباتي 📚", callback_data="my_accounts"), InlineKeyboardButton("إضافة حساب +", callback_data="link")],
@@ -20,6 +33,7 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- رسالة البدء (الواجهة الرئيسية) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id, update.effective_user.username)
     accounts_count = db.get_accounts_count(user[0])
@@ -47,6 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.callback_query.edit_message_text(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
+# --- معالج الأزرار ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -69,7 +84,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "━━━━━━━━━━━━━━━━━━\n"
             "اختر حساباً تعليمياً لعرض تفاصيله، أو أضف حساباً جديداً."
         )
-        keyboard = [[InlineKeyboardButton("إضافة حساب +", callback_data="link")],[InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]]
+        keyboard = [
+            [InlineKeyboardButton("إضافة حساب +", callback_data="link")],
+            [InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]
+        ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "my_accounts":
@@ -82,7 +100,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "🗄 **حساباتك المرتبطة:**\n\n"
             for i, acc in enumerate(accounts, 1):
                 text += f"{i}. `{acc[2]}`\n"
-            keyboard = [[InlineKeyboardButton("بدء الحل ⚡", callback_data="solve")],[InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]]
+            keyboard = [
+                [InlineKeyboardButton("بدء الحل ⚡", callback_data="solve")],
+                [InlineKeyboardButton("الرئيسية 🏠", callback_data="main_menu")]
+            ]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "sub":
@@ -104,7 +125,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
     elif data == "link":
-        await query.edit_message_text("🔗 **ربط حساب جديد**\n\nأرسل بياناتك:\n`Login_ID Password`", parse_mode="Markdown")
+        await query.edit_message_text("🔗 **ربط حساب جديد**\n\nأرسل بياناتك بالصيغة التالية:\n`Login_ID Password`", parse_mode="Markdown")
         context.user_data['awaiting_link'] = True
 
     elif data == "solve":
@@ -117,7 +138,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         await query.edit_message_text("⏳ جاري الاتصال بالمنصة وبدء الحل...")
-        result = await login_and_solve(accounts[0][2], accounts[0][3])
+        result = await login_and_solve(accounts[0][2], accounts[0][3], query=query)
         
         if result['success']:
             db.decrease_solve(user_id)
@@ -130,6 +151,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['awaiting_vip'] = False
         await start(update, context)
 
+# --- معالج الرسائل النصية ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('awaiting_link'):
         text = update.message.text.strip()
@@ -152,7 +174,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تم استلام الكود، جاري التحقق منه...")
         context.user_data['awaiting_vip'] = False
 
-# معالج الأخطاء لتجاهل Conflict و BadRequest
+# --- معالج الأخطاء ---
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     if isinstance(context.error, Conflict):
         return 
